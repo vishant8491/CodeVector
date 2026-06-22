@@ -53,7 +53,7 @@ const MAX_LIMIT = 100;
 router.get('/', async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit) || DEFAULT_LIMIT, MAX_LIMIT);
-    const { category, cursor } = req.query;
+    const { category, cursor, search } = req.query;
 
     // Base filter: category is optional
     const filter = {};
@@ -61,20 +61,52 @@ router.get('/', async (req, res) => {
       filter.category = category;
     }
 
+    // ---------------------------------------------------------------------
+    // SEARCH
+    //
+    // We use MongoDB's $text operator, which uses the text index defined
+    // on { name: 'text', category: 'text' } in the model. This is an
+    // indexed lookup, not a full collection scan — important at 200k docs.
+    //
+    // Note: $text search returns results in an arbitrary order by default
+    // (technically by relevance score). We deliberately do NOT sort by
+    // text score here, because the assignment's core requirement is
+    // "newest first" ordering — we still sort by { createdAt: -1, _id: -1 }
+    // below, same as the non-search case. $text here is acting purely as
+    // a filter (matches / doesn't match), not as a ranking signal.
+    if (search && search.trim()) {
+      filter.$text = { $search: search.trim() };
+    }
+
     // If a cursor was provided, add the "give me items after this point"
     // condition. The cursor is a base64-encoded JSON string containing the
     // last seen createdAt + _id, so it's a single opaque token for the
     // client to pass back — they don't need to know its internal shape.
+    //
+    // IMPORTANT: when both $text and our cursor condition exist together,
+    // we can't just add cursor as another top-level $or, because $text
+    // queries can only have one $text per top-level query and combining
+    // it with an unrelated $or on the same level can confuse the planner.
+    // We use $and to keep them as clearly separate, independent conditions.
     if (cursor) {
       const decoded = decodeCursor(cursor);
       if (decoded) {
-        filter.$or = [
-          { createdAt: { $lt: decoded.createdAt } },
-          {
-            createdAt: decoded.createdAt,
-            _id: { $lt: decoded.id },
-          },
-        ];
+        const cursorCondition = {
+          $or: [
+            { createdAt: { $lt: decoded.createdAt } },
+            {
+              createdAt: decoded.createdAt,
+              _id: { $lt: decoded.id },
+            },
+          ],
+        };
+
+        if (filter.$text) {
+          filter.$and = [{ $text: filter.$text }, cursorCondition];
+          delete filter.$text;
+        } else {
+          Object.assign(filter, cursorCondition);
+        }
       }
     }
 

@@ -27,4 +27,24 @@ productSchema.index({ createdAt: -1, _id: -1 });
 // Combined with createdAt so filtered+sorted queries also use an index.
 productSchema.index({ category: 1, createdAt: -1, _id: -1 });
 
+// ---------------------------------------------------------------------------
+// SEARCH INDEX
+//
+// We need to search across `name` and `category`. A regex search like
+// { name: /iphone/i } with no index forces MongoDB to scan every one of the
+// 200,000 documents on every request — slow at this scale.
+//
+// A text index lets MongoDB use an inverted index (similar to how a search
+// engine works) instead of scanning every document. It tokenizes the text
+// fields into words, so it matches whole words/prefixes fast.
+//
+// Trade-off worth knowing for the interview: a text index does whole-word
+// matching, not arbitrary substring matching. Searching "phone" will match
+// "Phone Case" but won't match a partial fragment like "hon" the way a SQL
+// LIKE '%hon%' would. For this assignment's scale and use case (browsing
+// product names), that's the right trade-off — substring search on 200k
+// docs without a specialized index (or a search engine like Atlas Search)
+// would be slow regardless of approach.
+productSchema.index({ name: 'text', category: 'text' });
+
 module.exports = mongoose.model('Product', productSchema);

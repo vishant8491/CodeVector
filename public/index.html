@@ -10,6 +10,10 @@
   h1 { font-size: 22px; margin-bottom: 4px; }
   .subtitle { color: #64748b; font-size: 13px; margin-bottom: 20px; }
   .controls { display: flex; gap: 10px; margin-bottom: 16px; }
+  input[type="text"] {
+    padding: 9px 14px; border: 1px solid #cbd5e1; border-radius: 8px;
+    font-size: 14px; flex: 1; max-width: 320px;
+  }
   select, button {
     padding: 9px 14px; border: 1px solid #cbd5e1; border-radius: 8px;
     font-size: 14px; background: white; cursor: pointer;
@@ -29,6 +33,7 @@
   <p class="subtitle">Browsing 200,000 products — newest first</p>
 
   <div class="controls">
+    <input type="text" id="searchInput" placeholder="Search by name or category...">
     <select id="categoryFilter">
       <option value="">All Categories</option>
     </select>
@@ -52,6 +57,8 @@
   let cursorStack = [null]; // stack of cursors so we can know "current" cursor
   let currentCursor = null;
   let currentCategory = '';
+  let currentSearch = '';
+  let debounceTimer = null;
 
   async function loadCategories() {
     const res = await fetch(`${API_BASE}/categories`);
@@ -70,24 +77,46 @@
     const params = new URLSearchParams({ limit: 20 });
     if (cursor) params.set('cursor', cursor);
     if (currentCategory) params.set('category', currentCategory);
+    if (currentSearch) params.set('search', currentSearch);
 
     const res = await fetch(`${API_BASE}?${params}`);
     const data = await res.json();
 
     const tbody = document.getElementById('productRows');
-    tbody.innerHTML = data.products.map(p => `
-      <tr>
-        <td>${p.name}</td>
-        <td>${p.category}</td>
-        <td>₹${p.price.toFixed(2)}</td>
-        <td>${new Date(p.createdAt).toLocaleString()}</td>
-      </tr>
-    `).join('');
+
+    if (data.products.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#94a3b8; padding:24px;">No products match your search.</td></tr>`;
+    } else {
+      tbody.innerHTML = data.products.map(p => `
+        <tr>
+          <td>${escapeHtml(p.name)}</td>
+          <td>${escapeHtml(p.category)}</td>
+          <td>₹${p.price.toFixed(2)}</td>
+          <td>${new Date(p.createdAt).toLocaleString()}</td>
+        </tr>
+      `).join('');
+    }
 
     document.getElementById('nextBtn').disabled = !data.hasMore;
     document.getElementById('status').textContent = `Showing ${data.products.length} products`;
 
     return data.nextCursor;
+  }
+
+  // Basic HTML-escaping so product names/categories can't break the markup
+  // or inject script tags — defensive, since this data ultimately came from
+  // a seed script we control, but it's the right habit when rendering any
+  // dynamic text into innerHTML.
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function resetAndReload() {
+    currentCursor = null;
+    cursorStack = [null];
+    loadProducts(null).then(next => { if (next) cursorStack.push(next); });
   }
 
   document.getElementById('nextBtn').addEventListener('click', async () => {
@@ -98,11 +127,22 @@
     }
   });
 
-  document.getElementById('categoryFilter').addEventListener('change', async (e) => {
+  document.getElementById('categoryFilter').addEventListener('change', (e) => {
     currentCategory = e.target.value;
-    currentCursor = null;
-    cursorStack = [null];
-    await loadProducts(null).then(next => { if (next) cursorStack.push(next); });
+    resetAndReload();
+  });
+
+  // Debounced search: we wait 350ms after the user stops typing before
+  // firing the request. Without this, every keystroke would trigger a
+  // separate query against 200k documents — wasteful and makes the UI
+  // feel laggy as responses race each other out of order.
+  document.getElementById('searchInput').addEventListener('input', (e) => {
+    clearTimeout(debounceTimer);
+    const value = e.target.value;
+    debounceTimer = setTimeout(() => {
+      currentSearch = value.trim();
+      resetAndReload();
+    }, 350);
   });
 
   (async () => {

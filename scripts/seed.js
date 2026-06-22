@@ -92,6 +92,15 @@ async function seed() {
   const seconds = ((Date.now() - startTime) / 1000).toFixed(1);
   console.log(`\nDone. Inserted ${inserted} products in ${seconds}s.`);
 
+  // Mongoose creates indexes defined in the schema automatically on connect,
+  // but on a large collection like this one, index builds can take a moment
+  // to finish in the background. We explicitly wait for them here so the
+  // seed script doesn't exit while the text index is still building —
+  // search would otherwise silently fail to use the index for a bit.
+  console.log('Ensuring indexes are built (this can take a moment on 200k docs)...');
+  await Product.ensureIndexes();
+  console.log('Indexes ready.');
+
   await mongoose.disconnect();
 }
 
