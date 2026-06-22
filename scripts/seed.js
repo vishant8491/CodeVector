@@ -1,17 +1,3 @@
-// scripts/seed.js
-//
-// Generates 200,000 products and inserts them in BATCHES, not one at a time.
-//
-// WHY BATCHES MATTER:
-// Inserting one document at a time means 200,000 separate round-trips to the
-// database — each one has network + write overhead. That's painfully slow
-// (can take 10+ minutes, sometimes much worse).
-//
-// insertMany() sends a batch of documents in ONE round-trip. We chunk into
-// batches of 5,000 so we don't try to send all 200,000 in a single giant
-// request (which can hit memory/payload limits). This finishes in seconds,
-// not minutes.
-
 require('dotenv').config();
 const mongoose = require('mongoose');
 const Product = require('../models/Product');
@@ -47,8 +33,6 @@ function randomFrom(arr) {
 }
 
 function generateProduct(index) {
-  // Spread createdAt over the last 180 days so "newest first" sorting
-  // and category filtering both have realistic, varied data to work with.
   const daysAgo = Math.random() * 180;
   const createdAt = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000);
 
@@ -92,11 +76,6 @@ async function seed() {
   const seconds = ((Date.now() - startTime) / 1000).toFixed(1);
   console.log(`\nDone. Inserted ${inserted} products in ${seconds}s.`);
 
-  // Mongoose creates indexes defined in the schema automatically on connect,
-  // but on a large collection like this one, index builds can take a moment
-  // to finish in the background. We explicitly wait for them here so the
-  // seed script doesn't exit while the text index is still building —
-  // search would otherwise silently fail to use the index for a bit.
   console.log('Ensuring indexes are built (this can take a moment on 200k docs)...');
   await Product.ensureIndexes();
   console.log('Indexes ready.');

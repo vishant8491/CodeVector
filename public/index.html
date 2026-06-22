@@ -54,7 +54,7 @@
 
 <script>
   const API_BASE = '/api/products';
-  let cursorStack = [null]; // stack of cursors so we can know "current" cursor
+  let cursorStack = [null]; 
   let currentCursor = null;
   let currentCategory = '';
   let currentSearch = '';
@@ -103,10 +103,6 @@
     return data.nextCursor;
   }
 
-  // Basic HTML-escaping so product names/categories can't break the markup
-  // or inject script tags — defensive, since this data ultimately came from
-  // a seed script we control, but it's the right habit when rendering any
-  // dynamic text into innerHTML.
   function escapeHtml(str) {
     const div = document.createElement('div');
     div.textContent = str;
@@ -132,10 +128,7 @@
     resetAndReload();
   });
 
-  // Debounced search: we wait 350ms after the user stops typing before
-  // firing the request. Without this, every keystroke would trigger a
-  // separate query against 200k documents — wasteful and makes the UI
-  // feel laggy as responses race each other out of order.
+  
   document.getElementById('searchInput').addEventListener('input', (e) => {
     clearTimeout(debounceTimer);
     const value = e.target.value;
